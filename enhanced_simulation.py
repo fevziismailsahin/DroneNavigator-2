@@ -18,9 +18,12 @@ import matplotlib.colors as mcolors
 from matplotlib.lines import Line2D
 
 from config import DEFAULT_CONFIG
-from simulation_core import Simulation, Drone, Target, Obstacle, Turret
+from simulation_core import Simulation, Drone
 from geo_data_manager import GeoDataManager
 from advanced_scenarios import EnemyDrone, Rocket, AdvancedDroneAI
+from compatible_simulation import SimpleObstacle as Obstacle
+from compatible_simulation import SimpleTarget as Target
+from compatible_simulation import SimpleTurret as Turret
 
 # Create output directory if it doesn't exist
 OUTPUT_DIR = "output"

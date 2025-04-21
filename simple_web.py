@@ -1,4 +1,320 @@
-<!DOCTYPE html>
+"""
+Simplified Web-based Visualization for NATO Military Drone Swarm Simulation
+"""
+
+import os
+import json
+import time
+import threading
+import base64
+import random
+from io import BytesIO
+from flask import Flask, render_template, jsonify, send_from_directory, Response, request
+
+import matplotlib
+matplotlib.use('Agg')  # Non-interactive backend
+import matplotlib.pyplot as plt
+import numpy as np
+
+from config import DEFAULT_CONFIG
+from simulation_core import Simulation
+
+# Create Flask app
+app = Flask(__name__)
+app.config['SECRET_KEY'] = 'nato-military-simulation-key'
+
+# Global simulation state
+simulation = None
+sim_thread = None
+sim_running = False
+sim_step = 0
+sim_stats = {}
+current_plot_data = None
+sim_lock = threading.Lock()
+output_dir = "static/output"
+
+# Ensure output directories exist
+os.makedirs(output_dir, exist_ok=True)
+os.makedirs("static", exist_ok=True)
+os.makedirs("templates", exist_ok=True)
+
+def initialize_simulation(config=None):
+    """Initialize simulation with provided config"""
+    global simulation, sim_step
+    if config is None:
+        config = DEFAULT_CONFIG.copy()
+    
+    simulation = Simulation(config)
+    sim_step = 0
+    return simulation
+
+def simulation_thread_func(max_steps=200, step_delay=0.1):
+    """Background thread to run the simulation"""
+    global sim_running, sim_step, sim_stats, current_plot_data
+    
+    last_time = time.time()
+    steps_this_second = 0
+    fps_counter = 0
+    
+    while sim_running and sim_step < max_steps and not simulation.is_complete():
+        current_time = time.time()
+        elapsed = current_time - last_time
+        
+        # Track simulation performance metrics
+        if elapsed >= 1.0:
+            fps_counter = steps_this_second
+            steps_this_second = 0
+            last_time = current_time
+        
+        # Process simulation step
+        with sim_lock:
+            try:
+                simulation.step()
+                sim_step += 1
+                sim_stats = simulation.get_statistics()
+                
+                # Add performance metrics
+                if 'performance' not in sim_stats:
+                    sim_stats['performance'] = {}
+                sim_stats['performance']['fps'] = fps_counter
+                
+                steps_this_second += 1
+            except Exception as e:
+                print(f"Error in simulation step: {e}")
+                sim_running = False
+                break
+        
+        # Generate plot for visualization
+        with sim_lock:
+            if sim_step % 2 == 0 or sim_step == 1:
+                try:
+                    current_plot_data = generate_plot_data(sim_step)
+                except Exception as e:
+                    print(f"Error generating plot: {e}")
+        
+        # Minimal delay to manage CPU usage
+        time.sleep(step_delay)
+    
+    # Final statistics when complete
+    sim_running = False
+    with sim_lock:
+        sim_stats = simulation.get_statistics()
+        current_plot_data = generate_plot_data(sim_step, is_final=True)
+
+def generate_plot_data(step, is_final=False):
+    """Generate plot of current simulation state and return as base64 image"""
+    fig, ax = plt.subplots(figsize=(10, 8), facecolor='#0a1929')
+    ax.set_facecolor('#132f4c')
+    
+    # Grid and styling
+    ax.grid(color='#1e4976', linestyle='--', linewidth=0.5, alpha=0.5)
+    
+    # Set plot limits and labels
+    field_size = simulation.config["FIELD_SIZE"]
+    ax.set_xlim(0, field_size)
+    ax.set_ylim(0, field_size)
+    
+    # Title and labels
+    ax.set_title(f"NATO MILITARY DRONE OPERATION - Step {step}", 
+                color='#66b2ff', fontsize=14, fontweight='bold')
+    ax.set_xlabel("X Position (km)", color='#66b2ff')
+    ax.set_ylabel("Y Position (km)", color='#66b2ff')
+    ax.tick_params(colors='#66b2ff', which='both')
+    
+    # Border styling
+    for spine in ax.spines.values():
+        spine.set_color('#173a5e')
+        spine.set_linewidth(2)
+    
+    # Plot obstacles
+    for obstacle in simulation.obstacles:
+        circle = plt.Circle(
+            obstacle.pos, 
+            obstacle.radius, 
+            color='#654321', 
+            alpha=0.8
+        )
+        ax.add_patch(circle)
+    
+    # Plot turrets
+    for turret in simulation.turrets:
+        circle = plt.Circle(
+            turret.pos, 
+            1.5, 
+            color='#ff2a2a', 
+            alpha=0.9
+        )
+        range_circle = plt.Circle(
+            turret.pos, 
+            turret.range, 
+            color='#ff2a2a', 
+            alpha=0.15,
+            linestyle='--'
+        )
+        ax.add_patch(circle)
+        ax.add_patch(range_circle)
+    
+    # Plot targets
+    for i, target in enumerate(simulation.targets):
+        if target.alive:
+            square = plt.Rectangle(
+                (target.pos[0] - 2.0, target.pos[1] - 2.0), 
+                4, 4, 
+                color='#00aa00', 
+                alpha=0.8
+            )
+            ax.add_patch(square)
+            ax.text(target.pos[0], target.pos[1], f"T{i+1}", 
+                   ha='center', va='center', color='white', 
+                   fontweight='bold', fontsize=9)
+    
+    # Plot drones
+    from config import STATUS_COLORS, DEFAULT_COLOR
+    
+    for i, drone in enumerate(simulation.drones):
+        if drone.alive:
+            color = STATUS_COLORS.get(drone.status, DEFAULT_COLOR)
+            
+            circle = plt.Circle(
+                drone.pos, 
+                0.7, 
+                color=color, 
+                alpha=0.9
+            )
+            ax.add_patch(circle)
+            
+            # Draw velocity vector
+            if np.linalg.norm(drone.velocity) > 0.1:
+                velocity = drone.velocity / np.linalg.norm(drone.velocity) * 2
+                ax.arrow(
+                    drone.pos[0], 
+                    drone.pos[1], 
+                    velocity[0], 
+                    velocity[1], 
+                    head_width=0.4, 
+                    head_length=0.7, 
+                    fc=color, 
+                    ec=color
+                )
+            
+            ax.text(drone.pos[0], drone.pos[1], f"{i+1}", 
+                   ha='center', va='center', color='white', 
+                   fontweight='bold', fontsize=8)
+    
+    # Add mission time
+    mission_time = f"T+{step:03d}"
+    ax.text(0.02, 0.98, f"MISSION TIME: {mission_time}", 
+           transform=ax.transAxes, color='#66b2ff', 
+           fontsize=10, verticalalignment='top',
+           bbox=dict(boxstyle="round,pad=0.3", fc='#173a5e', ec='#66b2ff', alpha=0.7))
+    
+    # Save the plot to a BytesIO object
+    img_data = BytesIO()
+    plt.savefig(img_data, format='png', dpi=100, facecolor='#0a1929', bbox_inches='tight')
+    img_data.seek(0)
+    plt.close(fig)
+    
+    # Convert to base64 for embedding in HTML
+    img_base64 = base64.b64encode(img_data.getvalue()).decode('utf-8')
+    return img_base64
+
+@app.route('/')
+def index():
+    """Main page route"""
+    create_template_files()  # Always ensure template exists
+    return render_template('index.html')
+
+@app.route('/static/<path:path>')
+def send_static(path):
+    """Serve static files"""
+    return send_from_directory('static', path)
+
+@app.route('/ping')
+def ping():
+    """Health check endpoint"""
+    return jsonify({'status': 'ok'})
+
+@app.route('/api/start_simulation', methods=['GET', 'POST'])
+def start_simulation():
+    """Start a new simulation"""
+    global simulation, sim_thread, sim_running, sim_step
+    
+    if sim_running:
+        return jsonify({'status': 'error', 'message': 'Simulation already running'})
+    
+    # Initialize with default config
+    initialize_simulation()
+    
+    # Start simulation thread
+    sim_running = True
+    sim_step = 0
+    sim_thread = threading.Thread(target=simulation_thread_func)
+    sim_thread.daemon = True
+    sim_thread.start()
+    
+    return jsonify({'status': 'success', 'message': 'Simulation started'})
+
+@app.route('/api/stop_simulation', methods=['GET', 'POST'])
+def stop_simulation():
+    """Stop the current simulation"""
+    global sim_running
+    
+    if not sim_running:
+        return jsonify({'status': 'error', 'message': 'No simulation running'})
+    
+    sim_running = False
+    return jsonify({'status': 'success', 'message': 'Simulation stopped'})
+
+@app.route('/api/reset_simulation', methods=['GET', 'POST'])
+def reset_simulation():
+    """Reset the simulation"""
+    global sim_running, simulation, sim_step
+    
+    # Stop if running
+    sim_running = False
+    if sim_thread and sim_thread.is_alive():
+        sim_thread.join(timeout=1.0)
+    
+    # Reinitialize
+    initialize_simulation()
+    sim_step = 0
+    
+    return jsonify({'status': 'success', 'message': 'Simulation reset'})
+
+@app.route('/api/simulation_status')
+def simulation_status():
+    """Get current simulation status"""
+    global sim_running, sim_step, sim_stats, current_plot_data
+    
+    with sim_lock:
+        status = {
+            'running': sim_running,
+            'step': sim_step,
+            'stats': sim_stats,
+            'complete': simulation.is_complete() if simulation else False,
+            'plot_data': current_plot_data
+        }
+    
+    return jsonify(status)
+
+@app.route('/current_image.png')
+def get_current_image():
+    """Return current simulation state as PNG image"""
+    global current_plot_data
+    
+    if not current_plot_data:
+        # Return a placeholder image
+        with open('static/placeholder.png', 'rb') as f:
+            image_data = f.read()
+    else:
+        # Decode base64 data to binary
+        image_data = base64.b64decode(current_plot_data)
+    
+    return Response(image_data, mimetype='image/png')
+
+def create_template_files():
+    """Create necessary template files"""
+    index_html = """<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -319,3 +635,41 @@
     </script>
 </body>
 </html>
+"""
+
+    # Create the template file
+    with open('templates/index.html', 'w') as f:
+        f.write(index_html)
+    
+    # Create placeholder image
+    placeholder_path = 'static/placeholder.png'
+    if not os.path.exists(placeholder_path):
+        fig, ax = plt.subplots(figsize=(10, 8), facecolor='#0a1929')
+        ax.set_facecolor('#132f4c')
+        ax.text(0.5, 0.5, "NATO MILITARY DRONE SWARM SIMULATION\nPress Start to Begin", 
+               ha='center', va='center', fontsize=14, color='#66b2ff',
+               transform=ax.transAxes)
+        ax.set_xticks([])
+        ax.set_yticks([])
+        plt.savefig(placeholder_path, dpi=100, facecolor='#0a1929', bbox_inches='tight')
+        plt.close(fig)
+
+def main(host='0.0.0.0', port=5000, debug=False):
+    """Main entry point for running the web visualization"""
+    # Create template files
+    create_template_files()
+    
+    # Initialize simulation
+    initialize_simulation()
+    
+    print("\nNATO MILITARY DRONE SWARM WEB VISUALIZATION")
+    print("===========================================")
+    print(f"Starting web server on {host}:{port}")
+    print("Open your browser to view the simulation")
+    print("Press Ctrl+C to stop the server\n")
+    
+    # Start the Flask app
+    app.run(host=host, port=port, debug=debug)
+
+if __name__ == "__main__":
+    main()
