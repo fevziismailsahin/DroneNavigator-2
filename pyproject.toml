@@ -1,0 +1,13 @@
+[project]
+name = "repl-nix-workspace"
+version = "0.1.0"
+description = "Add your description here"
+requires-python = ">=3.11"
+dependencies = [
+    "geopandas>=1.0.1",
+    "matplotlib>=3.10.1",
+    "numpy>=2.2.5",
+    "pyqt5>=5.15.11",
+    "rasterio>=1.4.3",
+    "shapely>=2.1.0",
+]
