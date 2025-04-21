@@ -18,7 +18,7 @@ args = "Drone Swarm Simulation"
 
 [[workflows.workflow.tasks]]
 task = "workflow.run"
-args = "NATO Quick Simulation"
+args = "NATO Web Visualization"
 
 [[workflows.workflow]]
 name = "Drone Swarm Simulation"
@@ -35,7 +35,7 @@ task = "shell.exec"
 args = "python main.py"
 
 [[workflows.workflow]]
-name = "NATO Quick Simulation"
+name = "NATO Web Visualization"
 author = "agent"
 
 [workflows.workflow.metadata]
@@ -46,7 +46,8 @@ task = "packager.installForAll"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "python quick_simulation.py"
+args = "python web_fixed.py"
+waitForPort = 5000
 
 [deployment]
 run = ["sh", "-c", "python main.py"]

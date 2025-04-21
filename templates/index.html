@@ -4,262 +4,133 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>NATO Military Drone Swarm Simulation</title>
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.2.3/dist/css/bootstrap.min.css">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <style>
         body {
             background-color: #0a1929;
             color: #e0e0e0;
-            font-family: 'Roboto', sans-serif;
+            font-family: 'Arial', sans-serif;
+        }
+        .header {
+            background-color: #132f4c;
+            border-bottom: 2px solid #173a5e;
+            padding: 1rem;
+            margin-bottom: 1.5rem;
+            text-align: center;
         }
         .simulation-container {
-            position: relative;
-            border-radius: 8px;
             background-color: #132f4c;
-            padding: 1rem;
-            margin-bottom: 1rem;
-            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+            border-radius: 8px;
+            border: 1px solid #173a5e;
+            padding: 15px;
+            margin-bottom: 20px;
+        }
+        .mission-info {
+            border-left: 3px solid #66b2ff;
+            padding-left: 15px;
+            margin-top: 15px;
         }
         .control-panel {
-            background-color: #173a5e;
+            background-color: #0f2540;
             border-radius: 8px;
-            padding: 1.5rem;
-            margin-bottom: 1rem;
-            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
-        }
-        .stats-panel {
-            background-color: #173a5e;
-            border-radius: 8px;
-            padding: 1rem;
-            margin-bottom: 1rem;
-            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+            padding: 15px;
+            border: 1px solid #173a5e;
         }
         .btn-primary {
-            background-color: #0059b2;
-            border-color: #0059b2;
+            background-color: #2a6bc2;
+            border-color: #173a5e;
         }
-        .btn-danger {
-            background-color: #c70011;
-            border-color: #c70011;
-        }
-        .btn-success {
-            background-color: #087f5b;
-            border-color: #087f5b;
-        }
-        h1, h2, h3 {
-            color: #66b2ff;
-        }
-        .card {
+        .btn-primary:hover {
             background-color: #1e4976;
-            border: none;
-            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
-            margin-bottom: 1rem;
-        }
-        .card-header {
-            background-color: #173a5e;
-            color: #66b2ff;
-            font-weight: bold;
+            border-color: #173a5e;
         }
         .progress {
-            height: 20px;
-            background-color: #0a1929;
+            background-color: #0f2540;
         }
-        .loading-overlay {
-            position: absolute;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background-color: rgba(10, 25, 41, 0.7);
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            z-index: 1000;
-            border-radius: 8px;
-        }
-        .spinner-border {
-            width: 3rem;
-            height: 3rem;
-        }
-        .status-badge {
-            font-size: 0.9rem;
-            padding: 0.4rem 0.8rem;
-        }
-        .navbar {
-            background-color: #173a5e;
-            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
-        }
-        .navbar-brand {
-            font-weight: bold;
+        .military-title {
             color: #66b2ff;
+            text-transform: uppercase;
+            letter-spacing: 1px;
         }
-        .sim-title {
-            position: absolute;
-            top: 10px;
-            left: 10px;
-            background-color: rgba(19, 47, 76, 0.8);
-            padding: 5px 15px;
+        .status-indicator {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            margin-right: 5px;
+        }
+        .status-active {
+            background-color: #00aa00;
+        }
+        .status-inactive {
+            background-color: #ff2a2a;
+        }
+        .img-fluid {
+            max-width: 100%;
+            height: auto;
             border-radius: 4px;
-            font-weight: bold;
-            z-index: 900;
+            border: 1px solid #173a5e;
         }
-        #simulation-view {
-            min-height: 500px;
-            border-radius: 8px;
-            overflow: hidden;
-        }
-        .stat-value {
-            font-weight: bold;
-            font-size: 1.2rem;
-            color: #fff;
-        }
-        .stat-label {
-            color: #66b2ff;
-            font-size: 0.9rem;
-        }
-        .metric-card {
-            padding: 0.5rem;
+        #visualization {
             text-align: center;
-            background-color: #132f4c;
-            border-radius: 4px;
+        }
+        .status-label {
+            font-size: 0.8rem;
+            margin-top: 5px;
+            color: #b0b0b0;
         }
     </style>
 </head>
 <body>
-    <nav class="navbar navbar-expand-lg navbar-dark mb-4">
-        <div class="container">
-            <a class="navbar-brand" href="#">
-                <i class="fas fa-drone-alt"></i> NATO MILITARY DRONE SWARM SIMULATION
-            </a>
-            <div class="ms-auto">
-                <span id="simulation-status-badge" class="badge status-badge bg-secondary">
-                    <i class="fas fa-circle-notch fa-spin me-1"></i> Initializing
-                </span>
-            </div>
+    <div class="container-fluid">
+        <div class="header">
+            <h1 class="military-title">NATO Military Drone Swarm Simulation</h1>
+            <p>Real-Time Tactical Visualization Interface</p>
         </div>
-    </nav>
-
-    <div class="container">
+        
         <div class="row">
-            <div class="col-md-8">
+            <div class="col-md-9">
                 <div class="simulation-container">
-                    <div id="loading-overlay" class="loading-overlay">
-                        <div class="spinner-border text-light" role="status">
-                            <span class="visually-hidden">Loading...</span>
-                        </div>
+                    <div id="visualization">
+                        <img id="sim-image" src="/current_image.png" class="img-fluid" alt="Simulation Visualization">
                     </div>
-                    <div class="sim-title">
-                        <span id="step-counter">Step: 0</span>
-                    </div>
-                    <div id="simulation-view" class="text-center">
-                        <img id="simulation-image" src="" class="img-fluid rounded" alt="Simulation Visualization">
-                    </div>
-                </div>
-                
-                <div class="control-panel">
-                    <div class="d-flex justify-content-between align-items-center mb-3">
-                        <h3 class="mb-0"><i class="fas fa-gamepad me-2"></i>Simulation Controls</h3>
-                    </div>
-                    <div class="row">
-                        <div class="col-md-4 mb-2">
-                            <button id="start-btn" class="btn btn-success w-100">
-                                <i class="fas fa-play me-1"></i> Start Simulation
-                            </button>
-                        </div>
-                        <div class="col-md-4 mb-2">
-                            <button id="stop-btn" class="btn btn-warning w-100" disabled>
-                                <i class="fas fa-pause me-1"></i> Pause
-                            </button>
-                        </div>
-                        <div class="col-md-4 mb-2">
-                            <button id="reset-btn" class="btn btn-danger w-100">
-                                <i class="fas fa-redo me-1"></i> Reset
-                            </button>
+                    <div class="text-center mt-2">
+                        <div class="status-label">
+                            <span id="status-indicator" class="status-indicator status-inactive"></span>
+                            <span id="status-text">Simulation Inactive</span>
                         </div>
                     </div>
                 </div>
             </div>
             
-            <div class="col-md-4">
-                <div class="stats-panel">
-                    <h3 class="mb-3"><i class="fas fa-chart-line me-2"></i>Simulation Statistics</h3>
+            <div class="col-md-3">
+                <div class="control-panel">
+                    <h4 class="military-title mb-3">Control Panel</h4>
                     
-                    <div class="card mb-3">
-                        <div class="card-header">
-                            <i class="fas fa-drone me-2"></i>Drone Status
-                        </div>
-                        <div class="card-body">
-                            <div class="row g-2">
-                                <div class="col-6">
-                                    <div class="metric-card">
-                                        <div class="stat-value" id="drones-alive">0</div>
-                                        <div class="stat-label">Drones Active</div>
-                                    </div>
-                                </div>
-                                <div class="col-6">
-                                    <div class="metric-card">
-                                        <div class="stat-value" id="drones-total">0</div>
-                                        <div class="stat-label">Total Drones</div>
-                                    </div>
-                                </div>
-                            </div>
-                            
-                            <div class="mt-3">
-                                <label class="form-label mb-1">Drone Survival Rate</label>
-                                <div class="progress">
-                                    <div id="drone-progress" class="progress-bar bg-info" role="progressbar" style="width: 0%">0%</div>
-                                </div>
-                            </div>
-                        </div>
+                    <div class="d-grid gap-2 mb-4">
+                        <button id="startBtn" class="btn btn-primary">Start Simulation</button>
+                        <button id="stopBtn" class="btn btn-warning" disabled>Stop Simulation</button>
+                        <button id="resetBtn" class="btn btn-danger">Reset Simulation</button>
                     </div>
                     
-                    <div class="card mb-3">
-                        <div class="card-header">
-                            <i class="fas fa-crosshairs me-2"></i>Mission Status
+                    <div class="mission-info">
+                        <h5 class="military-title">Mission Status</h5>
+                        <div class="mb-2">
+                            <strong>Step:</strong> <span id="step-counter">0</span>
                         </div>
-                        <div class="card-body">
-                            <div class="row g-2">
-                                <div class="col-6">
-                                    <div class="metric-card">
-                                        <div class="stat-value" id="targets-destroyed">0</div>
-                                        <div class="stat-label">Targets Destroyed</div>
-                                    </div>
-                                </div>
-                                <div class="col-6">
-                                    <div class="metric-card">
-                                        <div class="stat-value" id="targets-total">0</div>
-                                        <div class="stat-label">Total Targets</div>
-                                    </div>
-                                </div>
-                            </div>
-                            
-                            <div class="mt-3">
-                                <label class="form-label mb-1">Mission Completion</label>
-                                <div class="progress">
-                                    <div id="mission-progress" class="progress-bar bg-success" role="progressbar" style="width: 0%">0%</div>
-                                </div>
-                            </div>
+                        <div class="mb-2">
+                            <strong>Drones Active:</strong> <span id="drones-active">0</span>
                         </div>
-                    </div>
-                    
-                    <div class="card">
-                        <div class="card-header">
-                            <i class="fas fa-tachometer-alt me-2"></i>Performance Metrics
+                        <div class="mb-2">
+                            <strong>Targets Remaining:</strong> <span id="targets-remaining">0</span>
                         </div>
-                        <div class="card-body">
-                            <div class="row g-2">
-                                <div class="col-6">
-                                    <div class="metric-card">
-                                        <div class="stat-value" id="exchange-ratio">0.0</div>
-                                        <div class="stat-label">Exchange Ratio</div>
-                                    </div>
-                                </div>
-                                <div class="col-6">
-                                    <div class="metric-card">
-                                        <div class="stat-value" id="time-steps">0</div>
-                                        <div class="stat-label">Time Steps</div>
-                                    </div>
-                                </div>
+                        <div class="mb-2">
+                            <strong>Simulation Rate:</strong> <span id="sim-fps">0</span> steps/s
+                        </div>
+                        <div class="mt-3">
+                            <h6 class="military-title">Mission Progress</h6>
+                            <div class="progress">
+                                <div id="mission-progress" class="progress-bar bg-info" role="progressbar" style="width: 0%" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100"></div>
                             </div>
                         </div>
                     </div>
@@ -268,139 +139,183 @@
         </div>
     </div>
 
-    <footer class="mt-4 py-3 text-center text-muted">
-        <div class="container">
-            <small>NATO Military Drone Swarm Simulation &copy; 2025</small>
-        </div>
-    </footer>
-
-    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.2.3/dist/js/bootstrap.bundle.min.js"></script>
     <script>
-        $(document).ready(function() {
-            let updateInterval;
-            const statusBadge = $('#simulation-status-badge');
-            const loadingOverlay = $('#loading-overlay');
-            
-            // Initial update
-            updateSimulationStatus();
-            
-            // Hide loading initially
-            loadingOverlay.hide();
-            
-            // Start simulation
-            $('#start-btn').click(function() {
-                loadingOverlay.show();
-                $.post('/api/start_simulation', function(data) {
+        // DOM elements
+        const startBtn = document.getElementById('startBtn');
+        const stopBtn = document.getElementById('stopBtn');
+        const resetBtn = document.getElementById('resetBtn');
+        const simImage = document.getElementById('sim-image');
+        const stepCounter = document.getElementById('step-counter');
+        const dronesActive = document.getElementById('drones-active');
+        const targetsRemaining = document.getElementById('targets-remaining');
+        const simFps = document.getElementById('sim-fps');
+        const missionProgress = document.getElementById('mission-progress');
+        const statusIndicator = document.getElementById('status-indicator');
+        const statusText = document.getElementById('status-text');
+
+        // Status polling
+        let statusInterval;
+        let fetchingStatus = false;
+        const updateInterval = 500; // Update every 500ms
+
+        // Start the simulation
+        startBtn.addEventListener('click', () => {
+            fetch('/api/start_simulation')
+                .then(response => response.json())
+                .then(data => {
                     if (data.status === 'success') {
-                        $('#start-btn').prop('disabled', true);
-                        $('#stop-btn').prop('disabled', false);
-                        $('#reset-btn').prop('disabled', true);
-                        
-                        statusBadge.removeClass('bg-secondary bg-danger bg-success').addClass('bg-primary');
-                        statusBadge.html('<i class="fas fa-running me-1"></i> Running');
-                        
-                        // Start regular updates
-                        updateInterval = setInterval(updateSimulationStatus, 500);
+                        startStatusPolling();
+                        updateControlState(true);
                     }
-                    loadingOverlay.hide();
-                });
-            });
-            
-            // Stop simulation
-            $('#stop-btn').click(function() {
-                loadingOverlay.show();
-                $.post('/api/stop_simulation', function(data) {
-                    if (data.status === 'success') {
-                        $('#start-btn').prop('disabled', false);
-                        $('#stop-btn').prop('disabled', true);
-                        $('#reset-btn').prop('disabled', false);
-                        
-                        statusBadge.removeClass('bg-primary bg-secondary bg-success').addClass('bg-warning');
-                        statusBadge.html('<i class="fas fa-pause me-1"></i> Paused');
-                        
-                        // Stop updates
-                        clearInterval(updateInterval);
-                        // But do one more update to get latest state
-                        updateSimulationStatus();
-                    }
-                    loadingOverlay.hide();
-                });
-            });
-            
-            // Reset simulation
-            $('#reset-btn').click(function() {
-                loadingOverlay.show();
-                $.post('/api/reset_simulation', function(data) {
-                    if (data.status === 'success') {
-                        $('#start-btn').prop('disabled', false);
-                        $('#stop-btn').prop('disabled', true);
-                        $('#reset-btn').prop('disabled', false);
-                        
-                        statusBadge.removeClass('bg-primary bg-warning bg-danger').addClass('bg-secondary');
-                        statusBadge.html('<i class="fas fa-sync me-1"></i> Ready');
-                        
-                        // Stop updates
-                        clearInterval(updateInterval);
-                        // But do one more update to get latest state
-                        updateSimulationStatus();
-                    }
-                    loadingOverlay.hide();
-                });
-            });
-            
-            // Function to update simulation status
-            function updateSimulationStatus() {
-                $.get('/api/simulation_status', function(data) {
-                    // Update step counter
-                    $('#step-counter').text('Step: ' + data.step);
-                    
-                    // Update statistics
-                    if (data.stats) {
-                        const stats = data.stats;
-                        
-                        // Drone stats
-                        $('#drones-alive').text(stats.drones_alive || 0);
-                        $('#drones-total').text(stats.total_drones || 0);
-                        
-                        const dronePercent = stats.total_drones ? 
-                            Math.round((stats.drones_alive / stats.total_drones) * 100) : 0;
-                        $('#drone-progress').css('width', dronePercent + '%').text(dronePercent + '%');
-                        
-                        // Target stats
-                        const targetsDestroyed = stats.total_targets - (stats.targets_remaining || 0);
-                        $('#targets-destroyed').text(targetsDestroyed);
-                        $('#targets-total').text(stats.total_targets || 0);
-                        
-                        const missionPercent = stats.total_targets ? 
-                            Math.round((targetsDestroyed / stats.total_targets) * 100) : 0;
-                        $('#mission-progress').css('width', missionPercent + '%').text(missionPercent + '%');
-                        
-                        // Performance metrics
-                        const dronesLost = stats.total_drones - stats.drones_alive;
-                        const ratio = dronesLost > 0 ? (targetsDestroyed / dronesLost).toFixed(2) : "∞";
-                        $('#exchange-ratio').text(ratio);
-                        $('#time-steps').text(stats.step_count || data.step);
-                    }
-                    
-                    // Update simulation visualization
-                    if (data.plot_data) {
-                        $('#simulation-image').attr('src', 'data:image/png;base64,' + data.plot_data);
-                    }
-                    
-                    // Check if simulation is complete
-                    if (data.complete) {
-                        clearInterval(updateInterval);
-                        $('#start-btn').prop('disabled', true);
-                        $('#stop-btn').prop('disabled', true);
-                        $('#reset-btn').prop('disabled', false);
-                        
-                        statusBadge.removeClass('bg-primary bg-warning bg-secondary').addClass('bg-success');
-                        statusBadge.html('<i class="fas fa-check-circle me-1"></i> Complete');
-                    }
-                });
-            }
+                })
+                .catch(error => console.error('Error starting simulation:', error));
         });
+
+        // Stop the simulation
+        stopBtn.addEventListener('click', () => {
+            fetch('/api/stop_simulation')
+                .then(response => response.json())
+                .then(data => {
+                    if (data.status === 'success') {
+                        updateControlState(false);
+                    }
+                })
+                .catch(error => console.error('Error stopping simulation:', error));
+        });
+
+        // Reset the simulation
+        resetBtn.addEventListener('click', () => {
+            fetch('/api/reset_simulation')
+                .then(response => response.json())
+                .then(data => {
+                    if (data.status === 'success') {
+                        updateControlState(false);
+                        updateStats({
+                            step: 0,
+                            stats: {},
+                            running: false,
+                            complete: false
+                        });
+                        // Force reload the image
+                        reloadImage();
+                    }
+                })
+                .catch(error => console.error('Error resetting simulation:', error));
+        });
+
+        // Update UI for current control state
+        function updateControlState(running) {
+            startBtn.disabled = running;
+            stopBtn.disabled = !running;
+            
+            if (running) {
+                statusIndicator.classList.remove('status-inactive');
+                statusIndicator.classList.add('status-active');
+                statusText.textContent = 'Simulation Active';
+            } else {
+                statusIndicator.classList.remove('status-active');
+                statusIndicator.classList.add('status-inactive');
+                statusText.textContent = 'Simulation Inactive';
+                
+                // Stop polling if not running
+                if (statusInterval) {
+                    clearInterval(statusInterval);
+                    statusInterval = null;
+                }
+            }
+        }
+
+        // Update stats display
+        function updateStats(data) {
+            stepCounter.textContent = data.step;
+            
+            // Only update if stats are available
+            if (data.stats) {
+                // Handle empty or missing stats gracefully
+                if (!data.stats.total_drones) data.stats.total_drones = 10;
+                if (!data.stats.drones_alive) data.stats.drones_alive = 0;
+                if (!data.stats.total_targets) data.stats.total_targets = 5;
+                if (!data.stats.targets_remaining) data.stats.targets_remaining = 5;
+                
+                dronesActive.textContent = `${data.stats.drones_alive}/${data.stats.total_drones}`;
+                targetsRemaining.textContent = `${data.stats.targets_remaining}/${data.stats.total_targets}`;
+                
+                // Calculate mission progress
+                const targetsDestroyed = data.stats.total_targets - data.stats.targets_remaining;
+                const progressPercent = (targetsDestroyed / data.stats.total_targets) * 100;
+                missionProgress.style.width = `${progressPercent}%`;
+                missionProgress.setAttribute('aria-valuenow', progressPercent);
+                
+                // Update FPS if available
+                if (data.stats.performance && data.stats.performance.fps) {
+                    simFps.textContent = data.stats.performance.fps;
+                }
+            }
+            
+            // If simulation is complete, stop polling
+            if (data.complete) {
+                updateControlState(false);
+                statusText.textContent = 'Mission Complete';
+            }
+        }
+
+        // Reload the visualization image
+        function reloadImage() {
+            // Add timestamp to prevent caching
+            simImage.src = `/current_image.png?t=${Date.now()}`;
+        }
+
+        // Poll for simulation status
+        function startStatusPolling() {
+            if (statusInterval) {
+                clearInterval(statusInterval);
+            }
+            
+            // Poll immediately
+            pollStatus();
+            
+            // Then set up regular polling
+            statusInterval = setInterval(pollStatus, updateInterval);
+        }
+
+        // Get current simulation status
+        function pollStatus() {
+            if (fetchingStatus) return;
+            
+            fetchingStatus = true;
+            fetch('/api/simulation_status')
+                .then(response => response.json())
+                .then(data => {
+                    updateStats(data);
+                    
+                    // Update image if plot data is available
+                    if (data.plot_data) {
+                        reloadImage();
+                    }
+                    
+                    // Update control state
+                    if (!data.running && statusInterval) {
+                        updateControlState(false);
+                    }
+                })
+                .catch(error => console.error('Error polling status:', error))
+                .finally(() => {
+                    fetchingStatus = false;
+                });
+        }
+
+        // Initialize with a status check
+        fetch('/api/simulation_status')
+            .then(response => response.json())
+            .then(data => {
+                updateControlState(data.running);
+                updateStats(data);
+                
+                if (data.running) {
+                    startStatusPolling();
+                }
+            })
+            .catch(error => console.error('Error checking status:', error));
     </script>
 </body>
 </html>
