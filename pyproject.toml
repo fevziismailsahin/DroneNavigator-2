@@ -12,5 +12,6 @@ dependencies = [
     "pygame>=2.6.1",
     "pyqt5>=5.15.11",
     "rasterio>=1.4.3",
+    "scipy>=1.15.2",
     "shapely>=2.1.0",
 ]

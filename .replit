@@ -2,7 +2,7 @@ modules = ["python-3.11"]
 
 [nix]
 channel = "stable-24_05"
-packages = ["SDL2", "SDL2_image", "SDL2_mixer", "SDL2_ttf", "cairo", "ffmpeg-full", "fontconfig", "freetype", "geos", "ghostscript", "gobject-introspection", "gtk3", "libjpeg", "libpng", "pkg-config", "portmidi", "qhull", "tcl", "tk"]
+packages = ["SDL2", "SDL2_image", "SDL2_mixer", "SDL2_ttf", "cairo", "ffmpeg-full", "fontconfig", "freetype", "geos", "ghostscript", "gobject-introspection", "gtk3", "libjpeg", "libpng", "libxcrypt", "pkg-config", "portmidi", "qhull", "tcl", "tk", "xsimd"]
 
 [workflows]
 runButton = "Project"
