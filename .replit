@@ -18,7 +18,7 @@ args = "Drone Swarm Simulation"
 
 [[workflows.workflow.tasks]]
 task = "workflow.run"
-args = "NATO Web Visualization"
+args = "NATO Enhanced Web Visualization"
 
 [[workflows.workflow]]
 name = "Drone Swarm Simulation"
@@ -35,7 +35,7 @@ task = "shell.exec"
 args = "python main.py"
 
 [[workflows.workflow]]
-name = "NATO Web Visualization"
+name = "NATO Enhanced Web Visualization"
 author = "agent"
 
 [workflows.workflow.metadata]
@@ -46,7 +46,7 @@ task = "packager.installForAll"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "python web_fixed.py"
+args = "python web_enhanced.py"
 waitForPort = 5000
 
 [deployment]
