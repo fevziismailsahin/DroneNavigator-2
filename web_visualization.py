@@ -53,21 +53,48 @@ def initialize_simulation(config=None):
     sim_step = 0
     return simulation
 
-def simulation_thread_func(max_steps=200, step_delay=0.1):
+def simulation_thread_func(max_steps=200, step_delay=0.01):
     """Background thread to run the simulation"""
     global sim_running, sim_step, sim_stats, current_plot_data
     
+    # Military-grade simulation runs faster with multi-step processing
+    STEPS_PER_CYCLE = 2  # Process multiple simulation steps per visual update
+    
+    last_time = time.time()
+    steps_this_second = 0
+    fps_counter = 0
+    
     while sim_running and sim_step < max_steps and not simulation.is_complete():
+        current_time = time.time()
+        elapsed = current_time - last_time
+        
+        # Track simulation performance metrics
+        if elapsed >= 1.0:
+            fps_counter = steps_this_second
+            steps_this_second = 0
+            last_time = current_time
+        
+        # Process multiple simulation steps for performance
+        for _ in range(STEPS_PER_CYCLE):
+            if sim_running and sim_step < max_steps and not simulation.is_complete():
+                with sim_lock:
+                    simulation.step()
+                    sim_step += 1
+                    sim_stats = simulation.get_statistics()
+                    
+                    # Add performance metrics
+                    if 'performance' not in sim_stats:
+                        sim_stats['performance'] = {}
+                    sim_stats['performance']['fps'] = fps_counter
+                    
+                    steps_this_second += 1
+        
+        # Generate plot for visualization - more frequently for real-time feel
         with sim_lock:
-            simulation.step()
-            sim_step += 1
-            sim_stats = simulation.get_statistics()
-            
-            # Generate plot for current state every 5 steps
-            if sim_step % 5 == 0 or sim_step == 1:
+            if sim_step % 2 == 0 or sim_step == 1:
                 current_plot_data = generate_plot_data()
         
-        # Add delay to control simulation speed
+        # Minimal delay for CPU management but maintain fast simulation
         time.sleep(step_delay)
     
     # Final statistics when complete
@@ -78,60 +105,127 @@ def simulation_thread_func(max_steps=200, step_delay=0.1):
 
 def generate_plot_data():
     """Generate plot of current simulation state and return as base64 image"""
-    fig, ax = plt.subplots(figsize=(10, 10))
+    fig, ax = plt.subplots(figsize=(10, 10), facecolor='#0a1929')
+    ax.set_facecolor('#132f4c')
     
-    # Set plot limits and labels
+    # Grid and border styling for military look
+    ax.grid(color='#1e4976', linestyle='--', linewidth=0.5, alpha=0.5)
+    
+    # Set plot limits and labels with military styling
     field_size = simulation.config["FIELD_SIZE"]
     ax.set_xlim(0, field_size)
     ax.set_ylim(0, field_size)
-    ax.set_title(f"Drone Swarm Simulation - Step {sim_step}")
-    ax.set_xlabel("X Position")
-    ax.set_ylabel("Y Position")
     
-    # Plot obstacles
+    # Title and axis labels in military style
+    ax.set_title(f"NATO MILITARY SWARM OPERATION - Step {sim_step}", 
+                 color='#66b2ff', fontsize=14, fontweight='bold')
+    
+    # Coordinate axes in military style
+    ax.set_xlabel("X Position (km)", color='#66b2ff')
+    ax.set_ylabel("Y Position (km)", color='#66b2ff')
+    ax.tick_params(colors='#66b2ff', which='both')
+    
+    # Military grid squares with coordinates
+    for spine in ax.spines.values():
+        spine.set_color('#173a5e')
+        spine.set_linewidth(2)
+    
+    # Plot terrain features (obstacles) with enhanced visual style
     for obstacle in simulation.obstacles:
+        # Mountain/terrain feature
         circle = plt.Circle(
             obstacle.pos, 
             obstacle.radius, 
-            color='brown', 
-            alpha=0.7
+            color='#654321', 
+            alpha=0.8
+        )
+        # Terrain elevation contours
+        contour_circle = plt.Circle(
+            obstacle.pos, 
+            obstacle.radius * 1.2, 
+            color='#654321', 
+            alpha=0.3,
+            fill=False,
+            linestyle='-'
         )
         ax.add_patch(circle)
+        ax.add_patch(contour_circle)
     
-    # Plot turrets
+    # Plot defensive turrets with enhanced military styling
     for turret in simulation.turrets:
+        # Main turret body
         circle = plt.Circle(
             turret.pos, 
             1.5, 
-            color='red', 
+            color='#ff2a2a', 
             alpha=0.9
         )
+        # Turret effective range
         range_circle = plt.Circle(
             turret.pos, 
             turret.range, 
-            color='red', 
-            alpha=0.1,
+            color='#ff2a2a', 
+            alpha=0.15,
             linestyle='--'
+        )
+        # Maximum engagement range
+        max_range_circle = plt.Circle(
+            turret.pos, 
+            turret.range * 1.1, 
+            color='#ff2a2a', 
+            alpha=0.05,
+            linestyle=':',
+            fill=False
         )
         ax.add_patch(circle)
         ax.add_patch(range_circle)
+        ax.add_patch(max_range_circle)
+        
+        # Add targeting lines (simulated active turret scanning)
+        scan_angle = (sim_step * 5) % 360  # Rotating scan
+        length = turret.range * 0.7
+        dx = length * np.cos(np.radians(scan_angle))
+        dy = length * np.sin(np.radians(scan_angle))
+        ax.plot([turret.pos[0], turret.pos[0] + dx], 
+                [turret.pos[1], turret.pos[1] + dy], 
+                color='#ff2a2a', linestyle='-', alpha=0.4, linewidth=0.7)
     
-    # Plot targets
-    for target in simulation.targets:
+    # Plot targets (objectives) with enhanced military styling
+    for i, target in enumerate(simulation.targets):
         if target.alive:
+            # Target symbol (military objective)
             square = plt.Rectangle(
                 (target.pos[0] - 2.0, target.pos[1] - 2.0), 
                 4, 4, 
-                color='green', 
+                color='#00aa00', 
                 alpha=0.8
             )
             ax.add_patch(square)
+            
+            # Target identifier
+            ax.text(target.pos[0], target.pos[1], f"T{i+1}", 
+                    ha='center', va='center', color='white', 
+                    fontweight='bold', fontsize=9)
+            
+            # Target perimeter (security zone)
+            perimeter = plt.Circle(
+                target.pos, 
+                5.0, 
+                color='#00aa00', 
+                alpha=0.1,
+                fill=False,
+                linestyle=':'
+            )
+            ax.add_patch(perimeter)
     
-    # Plot drones with color based on status
-    for drone in simulation.drones:
+    # Plot drones with enhanced military styling and status indicators
+    from config import STATUS_COLORS, DEFAULT_COLOR
+    
+    for i, drone in enumerate(simulation.drones):
         if drone.alive:
-            from config import STATUS_COLORS, DEFAULT_COLOR
             color = STATUS_COLORS.get(drone.status, DEFAULT_COLOR)
+            
+            # Drone body
             circle = plt.Circle(
                 drone.pos, 
                 0.7, 
@@ -140,7 +234,7 @@ def generate_plot_data():
             )
             ax.add_patch(circle)
             
-            # Draw velocity vector
+            # Draw velocity vector (movement direction and speed indicator)
             if np.linalg.norm(drone.velocity) > 0.1:
                 velocity = drone.velocity / np.linalg.norm(drone.velocity) * 2
                 ax.arrow(
@@ -154,13 +248,48 @@ def generate_plot_data():
                     ec=color
                 )
             
-            # Draw trajectory
+            # Add drone ID
+            ax.text(drone.pos[0], drone.pos[1], f"{i+1}", 
+                    ha='center', va='center', color='white', 
+                    fontweight='bold', fontsize=8)
+            
+            # Draw drone trajectory history (flight path)
             if len(drone.trajectory) > 1:
-                traj_x = [pos[0] for pos in drone.trajectory[-10:]]  # Last 10 positions
-                traj_y = [pos[1] for pos in drone.trajectory[-10:]]
-                ax.plot(traj_x, traj_y, color=color, alpha=0.5, linewidth=1)
+                # Get last positions from trajectory
+                # More advanced - use variable segment length based on status
+                history_len = 15 if drone.status == "Attacking" else 10
+                traj_x = [pos[0] for pos in drone.trajectory[-history_len:]]
+                traj_y = [pos[1] for pos in drone.trajectory[-history_len:]]
+                
+                # Plot with alpha gradient to show direction
+                points = np.array([traj_x, traj_y]).T.reshape(-1, 1, 2)
+                segments = np.concatenate([points[:-1], points[1:]], axis=1)
+                
+                from matplotlib.collections import LineCollection
+                lc = LineCollection(segments, color=color, alpha=0.4, linewidth=1)
+                ax.add_collection(lc)
+                
+                # Add direction indicator at the midpoint
+                if len(traj_x) > 5:
+                    mid_idx = len(traj_x) // 2
+                    ax.scatter(traj_x[mid_idx], traj_y[mid_idx], 
+                              color=color, s=10, marker='>')
         else:
-            # X for destroyed drones
+            # Advanced visualization for destroyed drones
+            # Explosion effect
+            ax.scatter(drone.pos[0], drone.pos[1], s=40, color='#ff6600', alpha=0.7)
+            
+            # Debris pattern
+            for j in range(3):
+                angle = j * 120 + (i * 40 % 360)  # Randomized debris pattern
+                dist = 0.8
+                dx = dist * np.cos(np.radians(angle))
+                dy = dist * np.sin(np.radians(angle))
+                ax.plot([drone.pos[0], drone.pos[0] + dx], 
+                        [drone.pos[1], drone.pos[1] + dy],
+                        color='#ff6600', alpha=0.5, linewidth=0.7)
+            
+            # X marker for destroyed 
             ax.plot(
                 [drone.pos[0] - 0.5, drone.pos[0] + 0.5], 
                 [drone.pos[1] - 0.5, drone.pos[1] + 0.5], 
@@ -174,18 +303,48 @@ def generate_plot_data():
                 linewidth=2
             )
     
-    # Add legend for drone status
+    # Add legend for drone status with military styling
     from config import STATUS_COLORS
     legend_elements = [
         plt.Line2D([0], [0], marker='o', color='w', 
                   markerfacecolor=color, markersize=10, label=status)
         for status, color in STATUS_COLORS.items()
     ]
-    ax.legend(handles=legend_elements, loc='upper right')
+    # Add additional items for other symbols
+    legend_elements.extend([
+        plt.Line2D([0], [0], marker='s', color='w', markerfacecolor='#00aa00', 
+                  markersize=10, label='Target'),
+        plt.Line2D([0], [0], marker='o', color='w', markerfacecolor='#ff2a2a', 
+                  markersize=10, label='Turret'),
+        plt.Line2D([0], [0], marker='o', color='w', markerfacecolor='#654321', 
+                  markersize=10, label='Terrain')
+    ])
     
-    # Save the plot to a BytesIO object
+    legend = ax.legend(handles=legend_elements, loc='upper right', 
+                      title="NATO ELEMENTS", framealpha=0.7,
+                      facecolor='#173a5e', edgecolor='#66b2ff')
+    legend.get_title().set_color('#66b2ff')
+    for text in legend.get_texts():
+        text.set_color('#e0e0e0')
+    
+    # Add military time and mission info
+    mission_time = f"T+{sim_step:03d}"
+    ax.text(0.02, 0.98, f"MISSION TIME: {mission_time}", 
+           transform=ax.transAxes, color='#66b2ff', 
+           fontsize=10, verticalalignment='top',
+           bbox=dict(boxstyle="round,pad=0.3", fc='#173a5e', ec='#66b2ff', alpha=0.7))
+    
+    # Add performance metrics
+    if 'performance' in sim_stats and 'fps' in sim_stats['performance']:
+        fps = sim_stats['performance']['fps']
+        ax.text(0.98, 0.02, f"SIMULATION RATE: {fps} STEPS/S",
+               transform=ax.transAxes, color='#66b2ff',
+               fontsize=8, ha='right', va='bottom',
+               bbox=dict(boxstyle="round,pad=0.3", fc='#173a5e', ec='#66b2ff', alpha=0.7))
+    
+    # Save the plot to a BytesIO object with high quality
     img_data = BytesIO()
-    plt.savefig(img_data, format='png', dpi=100)
+    plt.savefig(img_data, format='png', dpi=110, facecolor='#0a1929', bbox_inches='tight')
     img_data.seek(0)
     plt.close(fig)
     
