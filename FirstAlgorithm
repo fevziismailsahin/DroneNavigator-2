@@ -1,0 +1,939 @@
+# This Python file contains various algorithm tests and experiments in a single script. It’s a personal workspace for exploring and validating different algorithmic ideas, logic implementations, and performance checks.
+import sys
+import os
+import random
+import math
+import numpy as np
+from collections import deque
+from typing import List, Optional, Tuple, Dict
+
+# --- PyQt5 Imports ---
+from PyQt5.QtWidgets import (
+    QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
+    QPushButton, QLabel, QLineEdit, QSpinBox, QDoubleSpinBox, QFrame,
+    QFileDialog, QMessageBox, QStatusBar, QSizePolicy # <-- Add QSizePolicy here
+)
+from PyQt5.QtCore import QTimer, Qt, QRectF
+from PyQt5.QtGui import QIntValidator, QDoubleValidator
+
+# --- Matplotlib Imports ---
+import matplotlib
+matplotlib.use('Qt5Agg') # Set the backend
+from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
+from matplotlib.backends.backend_qt5agg import NavigationToolbar2QT as NavigationToolbar
+from matplotlib.figure import Figure
+import matplotlib.pyplot as plt
+import matplotlib.patches as patches
+
+# --- GIS Imports ---
+try:
+    import geopandas as gpd
+    import rasterio
+    import rasterio.plot
+    from shapely.geometry import Point, LineString
+    GIS_ENABLED = True
+except ImportError:
+    print("Warning: GIS libraries (geopandas, rasterio, shapely) not found. GIS features disabled.")
+    GIS_ENABLED = False
+
+# ----------------------------------------------------------------------------
+# Configuration & Constants (Adaptable via GUI)
+# ----------------------------------------------------------------------------
+
+DEFAULT_CONFIG = {
+    "FIELD_SIZE": 100.0,
+    "NUM_DRONES": 10,
+    "NUM_TARGETS": 3,
+    "NUM_TURRETS": 3,
+    "NUM_OBSTACLES": 5,
+    "DRONE_MAX_SPEED": 2.0,
+    "DRONE_MAX_FUEL": 600.0,
+    "DRONE_FUEL_CONSUMPTION_RATE": 1.0,
+    "DRONE_SENSOR_RANGE": 30.0,
+    "DRONE_ATTACK_RANGE": 4.0,
+    "DRONE_RADIUS": 0.5,
+    "WEIGHT_COHESION": 0.02,
+    "WEIGHT_SEPARATION": 0.2,
+    "WEIGHT_ALIGNMENT": 0.05,
+    "WEIGHT_TARGET_SEEKING": 1.0,
+    "WEIGHT_OBSTACLE_AVOIDANCE": 2.5,
+    "WEIGHT_TURRET_AVOIDANCE": 1.8,
+    "TURRET_RANGE": 20.0,
+    "TURRET_COOLDOWN": 8,
+    "TURRET_DAMAGE": 100.0,
+    "OBSTACLE_MIN_SIZE": 4.0,
+    "OBSTACLE_MAX_SIZE": 8.0,
+    "OBSTACLE_AVOIDANCE_DISTANCE": 12.0,
+    "TARGET_ASSIGNMENT_LIMIT": 3,
+    "SIMULATION_INTERVAL_MS": 50, # Faster update for smoother GUI feel
+    "MAX_SIMULATION_STEPS": 2000,
+    "LOW_FUEL_THRESHOLD": 0.2,
+    "DRONE_INITIAL_AVOID_FACTOR": 1.0, # Base avoidance factor
+    "DRONE_LEARNED_AVOID_INCREASE": 0.5 # How much avoidance increases per hit nearby
+}
+
+STATUS_COLORS = {
+    "Idle": "grey", "Moving": "blue", "Attacking": "orange", "Avoiding": "purple",
+    "LowFuel": "yellow", "NoFuel": "black", "Destroyed": "red"
+}
+DEFAULT_COLOR = "cyan"
+
+# ----------------------------------------------------------------------------
+# GIS Utilities (Simplified Placeholders)
+# ----------------------------------------------------------------------------
+
+class GISData:
+    def __init__(self):
+        self.dem_dataset = None
+        self.dem_array = None
+        self.dem_transform = None
+        self.vector_data = None # GeoDataFrame
+        self.map_bounds = None # Store as (minx, miny, maxx, maxy)
+
+    def load_dem(self, filepath):
+        if not GIS_ENABLED: return False, "GIS libraries not installed."
+        try:
+            self.dem_dataset = rasterio.open(filepath)
+            self.dem_array = self.dem_dataset.read(1)
+            self.dem_transform = self.dem_dataset.transform
+            self.map_bounds = self.dem_dataset.bounds
+            print(f"DEM loaded: {filepath}, Bounds: {self.map_bounds}")
+            # Normalize array for basic visualization if needed (optional)
+            # self.dem_normalized = (self.dem_array - np.min(self.dem_array)) / (np.max(self.dem_array) - np.min(self.dem_array))
+            return True, f"DEM Loaded: {os.path.basename(filepath)}"
+        except Exception as e:
+            self.dem_dataset = None
+            return False, f"Error loading DEM: {e}"
+
+    def load_vector(self, filepath):
+        if not GIS_ENABLED: return False, "GIS libraries not installed."
+        try:
+            self.vector_data = gpd.read_file(filepath)
+            # Ensure vector data is in the same CRS as DEM if possible, or reproject
+            if self.dem_dataset and self.vector_data.crs != self.dem_dataset.crs:
+                 print(f"Reprojecting vector data from {self.vector_data.crs} to {self.dem_dataset.crs}")
+                 self.vector_data = self.vector_data.to_crs(self.dem_dataset.crs)
+            print(f"Vector data loaded: {filepath}")
+            return True, f"Vector Data Loaded: {os.path.basename(filepath)}"
+        except Exception as e:
+            self.vector_data = None
+            return False, f"Error loading vector data: {e}"
+
+    def get_elevation(self, x, y):
+        """Placeholder: Get elevation at a point (simplistic)."""
+        if self.dem_dataset:
+            try:
+                row, col = self.dem_dataset.index(x, y)
+                # Basic bounds check
+                if 0 <= row < self.dem_array.shape[0] and 0 <= col < self.dem_array.shape[1]:
+                    return self.dem_array[row, col]
+            except IndexError: # Point outside raster bounds
+                pass
+        return 0.0 # Default elevation if no DEM or out of bounds
+
+    def is_line_of_sight_clear(self, pos1, pos2, observer_height=2.0, target_height=1.0):
+        """Placeholder: Highly simplified Line-of-Sight check."""
+        if not self.dem_dataset:
+            return True # No terrain to block
+
+        # Very basic check: elevation at midpoint vs straight line
+        # A real implementation needs to sample elevations along the line (e.g., using Bresenham's line algorithm on the grid)
+        # and account for Earth's curvature and refraction for long distances.
+        try:
+            mid_x, mid_y = (pos1[0] + pos2[0]) / 2, (pos1[1] + pos2[1]) / 2
+            elevation_midpoint_terrain = self.get_elevation(mid_x, mid_y)
+
+            elevation_p1_terrain = self.get_elevation(pos1[0], pos1[1])
+            elevation_p2_terrain = self.get_elevation(pos2[0], pos2[1])
+
+            # Elevation of the line-of-sight at the midpoint
+            elevation_los_at_mid = ((elevation_p1_terrain + observer_height) + (elevation_p2_terrain + target_height)) / 2
+
+            # If terrain at midpoint is higher than the LOS line, it's blocked (simplistic)
+            return elevation_midpoint_terrain < elevation_los_at_mid
+        except:
+             return True # Error during check, assume clear
+
+
+# ----------------------------------------------------------------------------
+# Simulation Core (Agent-Based Model - Adapted from previous)
+# ----------------------------------------------------------------------------
+# --- Target ---
+class Target:
+    def __init__(self, id: int, x: float, y: float, config):
+        self.id = id
+        self.pos = np.array([x, y], dtype=float)
+        self.alive = True
+        self.assigned_drones = 0
+        self.config = config
+
+    def get_pos(self) -> np.ndarray: return self.pos
+
+# --- Turret ---
+class Turret:
+    def __init__(self, id: int, x: float, y: float, config):
+        self.id = id
+        self.pos = np.array([x, y], dtype=float)
+        self.config = config
+        self.range = config["TURRET_RANGE"]
+        self.cooldown_timer = 0
+        self.cooldown_max = config["TURRET_COOLDOWN"]
+
+    def get_pos(self) -> np.ndarray: return self.pos
+    def can_shoot(self) -> bool: return self.cooldown_timer <= 0
+
+    def find_target(self, drones: List['Drone']) -> Optional['Drone']:
+        closest_drone = None
+        min_dist_sq = self.range**2
+        for drone in drones:
+            if drone.alive and drone.status != "NoFuel":
+                dist_sq = np.sum((drone.pos - self.pos)**2)
+                if dist_sq < min_dist_sq:
+                    min_dist_sq = dist_sq
+                    closest_drone = drone
+        return closest_drone
+
+    def shoot(self, drone: Optional['Drone'], all_drones: List['Drone']):
+        if self.can_shoot() and drone and drone.alive:
+            drone.alive = False
+            drone.status = "Destroyed"
+            self.cooldown_timer = self.cooldown_max
+            # Notify nearby drones (simple learning mechanism)
+            for d_notify in all_drones:
+                 if d_notify.alive and np.linalg.norm(d_notify.pos - drone.pos) < self.config["DRONE_SENSOR_RANGE"] / 2:
+                     d_notify.register_threat(self.id, drone.pos)
+
+
+    def update(self, drones: List['Drone']):
+        if self.cooldown_timer > 0: self.cooldown_timer -= 1
+        if self.can_shoot():
+             target_drone = self.find_target(drones)
+             self.shoot(target_drone, drones)
+
+# --- Obstacle ---
+class Obstacle:
+    def __init__(self, id: int, x: float, y: float, size: float, config):
+        self.id = id
+        self.pos = np.array([x, y], dtype=float)
+        self.size = size
+        self.radius = size / 2.0
+        self.config = config
+
+    def get_pos(self) -> np.ndarray: return self.pos
+
+    def get_repulsion_vector(self, drone_pos: np.ndarray) -> np.ndarray:
+        vec_to_obs = drone_pos - self.pos
+        dist_to_obs = np.linalg.norm(vec_to_obs)
+        effective_radius = self.radius + self.config["OBSTACLE_AVOIDANCE_DISTANCE"]
+        if 0 < dist_to_obs < effective_radius:
+            strength = (1.0 - dist_to_obs / effective_radius)**2
+            repulsion_direction = vec_to_obs / dist_to_obs if dist_to_obs > 1e-6 else np.random.rand(2) * 2 - 1
+            return repulsion_direction * strength
+        return np.zeros(2)
+
+# --- Drone ---
+class Drone:
+    def __init__(self, drone_id: int, x: float, y: float, config):
+        self.id = drone_id
+        self.pos = np.array([x, y], dtype=float)
+        self.velocity = np.zeros(2, dtype=float)
+        self.alive = True
+        self.config = config
+        self.fuel = config["DRONE_MAX_FUEL"]
+        self.max_speed = config["DRONE_MAX_SPEED"]
+        self.target: Optional[Target] = None
+        self.status = "Idle"
+        self.trajectory = deque(maxlen=20) # Fixed length for GUI perf
+        self.turret_avoidance_factors: Dict[int, float] = {} # Specific avoidance factors per turret ID
+
+    def get_pos(self) -> np.ndarray: return self.pos
+
+    def assign_target(self, target: Optional[Target]):
+        if self.target and self.target.alive: self.target.assigned_drones -= 1
+        self.target = target
+        if self.target:
+            self.target.assigned_drones += 1
+            if self.alive and self.status != "NoFuel": self.status = "Moving"
+        elif self.alive and self.status != "NoFuel": self.status = "Idle"
+
+    def register_threat(self, turret_id: int, hit_location: np.ndarray):
+         """Simple 'learning': increase avoidance for turret that scored a hit nearby."""
+         current_factor = self.turret_avoidance_factors.get(turret_id, self.config["DRONE_INITIAL_AVOID_FACTOR"])
+         new_factor = min(current_factor + self.config["DRONE_LEARNED_AVOID_INCREASE"], 5.0) # Cap max avoidance
+         self.turret_avoidance_factors[turret_id] = new_factor
+         # print(f"Drone {self.id} increased avoidance for Turret {turret_id} to {new_factor:.2f}")
+
+    def calculate_steering_force(self, drones: List['Drone'], targets: List['Target'],
+                                 obstacles: List[Obstacle], turrets: List[Turret], gis: GISData) -> np.ndarray:
+        # --- Target Seeking ---
+        target_force = np.zeros(2)
+        if self.target and self.target.alive:
+            # ** ML Placeholder: Advanced Pathfinding **
+            # Instead of direct vector, ML model could predict optimal path considering terrain, threats etc.
+            # target_pos_predicted = ml_pathfinding_model(self.pos, self.target.pos, gis_data, threat_map)
+            # desired_velocity = target_pos_predicted - self.pos
+            target_pos_actual = self.target.get_pos()
+            desired_velocity = target_pos_actual - self.pos
+            dist_to_target = np.linalg.norm(desired_velocity)
+
+            if dist_to_target < self.config["DRONE_ATTACK_RANGE"]:
+                self.attack()
+            elif dist_to_target > 1e-6:
+                 desired_velocity = (desired_velocity / dist_to_target) * self.max_speed
+                 target_force = (desired_velocity - self.velocity) * self.config["WEIGHT_TARGET_SEEKING"]
+            # ** GIS Influence: Adjust speed based on terrain? **
+            # elevation_change = gis.get_elevation(self.pos + desired_velocity) - gis.get_elevation(self.pos)
+            # target_force *= max(0.5, 1.0 - elevation_change * 0.1) # Slower if climbing steeply
+
+        # --- Obstacle Avoidance ---
+        obstacle_avoidance_force = sum(obs.get_repulsion_vector(self.pos) for obs in obstacles)
+        obstacle_avoidance_force *= self.config["WEIGHT_OBSTACLE_AVOIDANCE"]
+
+        # --- Turret Avoidance ---
+        turret_avoidance_force = np.zeros(2)
+        for turret in turrets:
+             turret_avoid_factor = self.turret_avoidance_factors.get(turret.id, self.config["DRONE_INITIAL_AVOID_FACTOR"])
+             vec_to_turret = self.pos - turret.get_pos()
+             dist_sq = np.sum(vec_to_turret**2)
+             avoid_radius_sq = (turret.range * 1.3)**2 # Start avoiding further out
+             if 0 < dist_sq < avoid_radius_sq:
+                  dist = math.sqrt(dist_sq)
+                  strength = turret_avoid_factor * (1.0 - dist / (turret.range * 1.3))**2
+                  if dist < turret.range: strength *= 2.5 # Extra push inside
+                  repulsion_direction = vec_to_turret / dist
+                  turret_avoidance_force += repulsion_direction * strength
+             # ** GIS LoS Check Placeholder **
+             # if not gis.is_line_of_sight_clear(self.pos, turret.pos):
+             #     turret_avoidance_force *= 0.1 # Reduce avoidance if LoS blocked by terrain
+
+        turret_avoidance_force *= self.config["WEIGHT_TURRET_AVOIDANCE"]
+
+        # --- Flocking Forces ---
+        cohesion_force, separation_force, alignment_force = np.zeros(2), np.zeros(2), np.zeros(2)
+        center_of_mass, average_velocity = np.zeros(2), np.zeros(2)
+        neighbor_count = 0
+        separation_radius_sq = (self.config["DRONE_RADIUS"] * 4)**2 # Check separation within ~2 diameters
+
+        for other in drones:
+            if other.id != self.id and other.alive and other.status != "NoFuel":
+                vec_to_other = other.pos - self.pos
+                dist_sq = np.sum(vec_to_other**2)
+                if 0 < dist_sq < self.config["DRONE_SENSOR_RANGE"]**2:
+                    dist = math.sqrt(dist_sq)
+                    neighbor_count += 1
+                    # Separation
+                    if dist_sq < separation_radius_sq:
+                         separation_force -= (vec_to_other / dist) * (1.0 - dist / (self.config["DRONE_RADIUS"] * 4))
+                    # Cohesion / Alignment data
+                    center_of_mass += other.pos
+                    average_velocity += other.velocity
+
+        if neighbor_count > 0:
+            center_of_mass /= neighbor_count
+            average_velocity /= neighbor_count
+            # Cohesion steering force
+            desired_coh = (center_of_mass - self.pos)
+            dist_coh = np.linalg.norm(desired_coh)
+            if dist_coh > 1e-6:
+                 desired_coh = (desired_coh / dist_coh) * self.max_speed
+                 cohesion_force = (desired_coh - self.velocity)
+            # Alignment steering force
+            dist_align = np.linalg.norm(average_velocity)
+            if dist_align > 1e-6:
+                 desired_align = (average_velocity / dist_align) * self.max_speed
+                 alignment_force = (desired_align - self.velocity)
+
+        cohesion_force *= self.config["WEIGHT_COHESION"]
+        separation_force *= self.config["WEIGHT_SEPARATION"]
+        alignment_force *= self.config["WEIGHT_ALIGNMENT"]
+
+        # --- Combine Forces ---
+        # ** ML Placeholder: Behavior / Strategy **
+        # ml_influence = ml_behavior_model(self.status, self.fuel, nearby_threats, nearby_allies)
+        # total_force = target_force + obstacle_avoidance_force + ... + ml_influence
+        total_force = (target_force + obstacle_avoidance_force + turret_avoidance_force +
+                       cohesion_force + separation_force + alignment_force)
+
+        return total_force
+
+        # Corrected line:
+    def update(self, drones: List['Drone'], targets: List['Target'], obstacles: List['Obstacle'], turrets: List['Turret'], gis: GISData):
+        if not self.alive:
+            if self.status != "Destroyed": self.status = "Destroyed"
+            return
+        if self.fuel <= 0:
+            if self.status != "NoFuel":
+                self.status = "NoFuel"
+                if self.target: self.assign_target(None) # Unassign if out of fuel
+                self.velocity = np.zeros(2)
+            return
+
+        self.fuel -= self.config["DRONE_FUEL_CONSUMPTION_RATE"]
+
+        # --- Update Movement ---
+        if self.status != "Attacking":
+            steering = self.calculate_steering_force(drones, targets, obstacles, turrets, gis)
+            self.velocity += steering
+            speed = np.linalg.norm(self.velocity)
+            if speed > self.max_speed:
+                self.velocity = (self.velocity / speed) * self.max_speed
+            self.pos += self.velocity
+
+            # Boundary Check (Clamp to field size or map bounds)
+            field_size = self.config["FIELD_SIZE"]
+            min_x, min_y, max_x, max_y = 0, 0, field_size, field_size
+            if gis.map_bounds:
+                min_x, min_y, max_x, max_y = gis.map_bounds
+            self.pos[0] = np.clip(self.pos[0], min_x, max_x)
+            self.pos[1] = np.clip(self.pos[1], min_y, max_y)
+
+
+        # --- Update Status ---
+        if self.status not in ["Attacking", "NoFuel", "Destroyed"]:
+            if self.fuel < self.config["DRONE_MAX_FUEL"] * self.config["LOW_FUEL_THRESHOLD"]:
+                self.status = "LowFuel"
+            elif np.linalg.norm(self.velocity) > 0.1 :
+                self.status = "Moving"
+            else:
+                 self.status = "Idle"
+
+        self.trajectory.append(self.pos.copy())
+
+    def attack(self):
+        if self.target and self.target.alive and self.alive and self.fuel > 0:
+            distance_to_target = np.linalg.norm(self.target.get_pos() - self.pos)
+            if distance_to_target < self.config["DRONE_ATTACK_RANGE"]:
+                if self.status != "Attacking": self.status = "Attacking"
+                self.target.alive = False # Instant kill
+                print(f"Drone {self.id} destroyed Target {self.target.id}")
+                self.assign_target(None) # Unassign and go Idle
+
+
+# --- Coordination Logic ---
+def assign_drones_to_targets(drones: List[Drone], targets: List[Target], config):
+    limit = config["TARGET_ASSIGNMENT_LIMIT"]
+    available_targets = sorted(
+        [t for t in targets if t.alive and t.assigned_drones < limit],
+        key=lambda t: t.assigned_drones # Prioritize targets with fewer assignments
+    )
+    if not available_targets:
+        for drone in drones:
+            if drone.alive and drone.target is not None and drone.status != "NoFuel":
+                drone.assign_target(None)
+        return
+
+    drones_needing_target = [
+        d for d in drones if d.alive and d.status != "NoFuel" and
+        (d.target is None or not d.target.alive or d.target.assigned_drones >= limit)
+    ]
+    drones_needing_target.sort(key=lambda dr: min(np.sum((dr.pos - t.pos)**2) for t in available_targets) if available_targets else float('inf'))
+
+    for drone in drones_needing_target:
+         current_available_targets = sorted(
+            [t for t in targets if t.alive and t.assigned_drones < limit],
+            key=lambda t: (t.assigned_drones, np.sum((drone.pos - t.pos)**2)) # Sort by assignments then distance
+         )
+         if current_available_targets:
+             best_target = current_available_targets[0]
+             drone.assign_target(best_target)
+         else:
+             drone.assign_target(None) # No targets left for this drone
+
+
+# --- Simulation Controller ---
+class SimulationController:
+    def __init__(self, config, gis_data):
+        self.config = config
+        self.gis_data = gis_data
+        self.drones: List[Drone] = []
+        self.targets: List[Target] = []
+        self.turrets: List[Turret] = []
+        self.obstacles: List[Obstacle] = []
+        self.step_count = 0
+        self.is_running = False
+        self.status_message = "Initialized"
+
+    def setup_simulation(self):
+        self.step_count = 0
+        self.is_running = False
+        self.drones = []
+        self.targets = []
+        self.turrets = []
+        self.obstacles = []
+
+        # Determine bounds for generation
+        min_x, min_y, max_x, max_y = 0, 0, self.config["FIELD_SIZE"], self.config["FIELD_SIZE"]
+        if self.gis_data.map_bounds:
+            min_x, min_y, max_x, max_y = self.gis_data.map_bounds
+            print(f"Generating entities within map bounds: {self.gis_data.map_bounds}")
+        else:
+             print(f"Generating entities within default field size: {self.config['FIELD_SIZE']}")
+
+        width = max_x - min_x
+        height = max_y - min_y
+
+        # Generate Targets
+        padding = width * 0.2
+        for i in range(self.config["NUM_TARGETS"]):
+            x = random.uniform(min_x + padding, max_x - padding)
+            y = random.uniform(min_y + padding, max_y - padding)
+            self.targets.append(Target(i, x, y, self.config))
+
+        # Generate Drones (near edges)
+        start_area_x = width * 0.1
+        start_area_y = height * 0.1
+        for i in range(self.config["NUM_DRONES"]):
+             side = random.choice(['left', 'bottom'])
+             if side == 'left':
+                 x = random.uniform(min_x, min_x + start_area_x)
+                 y = random.uniform(min_y, max_y)
+             else:
+                 x = random.uniform(min_x, max_x)
+                 y = random.uniform(min_y, min_y + start_area_y)
+             self.drones.append(Drone(i, x, y, self.config))
+
+        # Generate Turrets (randomly spaced)
+        padding_turret = width * 0.1
+        for i in range(self.config["NUM_TURRETS"]):
+            # Add basic placement logic to avoid overlap (simplified)
+            placed = False
+            for _ in range(20): # Max placement attempts
+                x = random.uniform(min_x + padding_turret, max_x - padding_turret)
+                y = random.uniform(min_y + padding_turret, max_y - padding_turret)
+                pos = np.array([x,y])
+                min_dist = 15 # Min distance between turrets
+                if all(np.linalg.norm(pos - t.pos) > min_dist for t in self.turrets):
+                    self.turrets.append(Turret(i, x, y, self.config))
+                    placed = True
+                    break
+            if not placed: print(f"Warning: Could not place turret {i} optimally.")
+
+        # Generate Obstacles
+        padding_obs = width * 0.05
+        for i in range(self.config["NUM_OBSTACLES"]):
+            size = random.uniform(self.config["OBSTACLE_MIN_SIZE"], self.config["OBSTACLE_MAX_SIZE"])
+            radius = size / 2.0
+            placed = False
+            for _ in range(20):
+                 x = random.uniform(min_x + padding_obs + radius, max_x - padding_obs - radius)
+                 y = random.uniform(min_y + padding_obs + radius, max_y - padding_obs - radius)
+                 pos = np.array([x,y])
+                 min_dist = 5 # Min dist between obstacle edges
+                 if all(np.linalg.norm(pos - o.pos) > (radius + o.radius + min_dist) for o in self.obstacles):
+                      self.obstacles.append(Obstacle(i, x, y, size, self.config))
+                      placed = True
+                      break
+            if not placed: print(f"Warning: Could not place obstacle {i} optimally.")
+
+        self.status_message = "Ready"
+
+
+    def run_step(self):
+        if not self.is_running:
+            return
+
+        self.step_count += 1
+
+        # 1. Assign Targets
+        assign_drones_to_targets(self.drones, self.targets, self.config)
+
+        # 2. Update Drones
+        # Pass GIS data to drone update if needed for terrain interaction/LoS
+        for drone in self.drones:
+            drone.update(self.drones, self.targets, self.obstacles, self.turrets, self.gis_data)
+
+        # 3. Update Turrets
+        for turret in self.turrets:
+            turret.update(self.drones)
+
+        # 4. Check End Conditions
+        num_alive_targets = sum(1 for t in self.targets if t.alive)
+        num_alive_drones = sum(1 for d in self.drones if d.alive)
+        num_active_drones = sum(1 for d in self.drones if d.alive and d.status != "NoFuel")
+
+        self.status_message = (f"Step: {self.step_count} | "
+                               f"Targets: {num_alive_targets}/{len(self.targets)} | "
+                               f"Drones Active/Alive: {num_active_drones}/{num_alive_drones}")
+
+        if num_alive_targets == 0:
+            self.status_message = f"SUCCESS: All targets destroyed! (Step {self.step_count})"
+            self.stop_simulation()
+        elif num_alive_drones == 0:
+            self.status_message = f"FAILED: All drones lost. (Step {self.step_count})"
+            self.stop_simulation()
+        elif num_active_drones == 0 and num_alive_drones > 0:
+            self.status_message = f"FAILED: Drones out of fuel. (Step {self.step_count})"
+            self.stop_simulation()
+        elif self.step_count >= self.config["MAX_SIMULATION_STEPS"]:
+            self.status_message = f"STOPPED: Max steps reached ({self.config['MAX_SIMULATION_STEPS']})"
+            self.stop_simulation()
+
+    def start_simulation(self):
+        if not self.is_running:
+            self.is_running = True
+            self.status_message = "Running"
+            print("Simulation Started")
+
+    def stop_simulation(self):
+        if self.is_running:
+            self.is_running = False
+            # Keep final status message
+            print(f"Simulation Stopped: {self.status_message}")
+
+
+# ----------------------------------------------------------------------------
+# Matplotlib Canvas Widget for PyQt
+# ----------------------------------------------------------------------------
+
+class MplCanvas(FigureCanvas):
+    def __init__(self, parent=None, width=8, height=8, dpi=100):
+        self.fig = Figure(figsize=(width, height), dpi=dpi)
+        self.axes = self.fig.add_subplot(111)
+        super().__init__(self.fig)
+        self.setParent(parent)
+        FigureCanvas.setSizePolicy(self,
+                                   QSizePolicy.Expanding,
+                                   QSizePolicy.Expanding)
+        FigureCanvas.updateGeometry(self)
+        self.sim_controller: Optional[SimulationController] = None
+        self.gis_data: Optional[GISData] = None
+        self.scatter_drones = None
+        self.scatter_targets = None
+        self.drone_texts = []
+        self.target_texts = []
+        self.turret_patches = []
+        self.obstacle_patches = []
+        self.trajectory_lines = []
+        self.dem_plot = None
+        self.vector_plot = None # Store reference to vector plot artist
+
+    def plot_initial_state(self, controller: SimulationController, gis: GISData):
+        self.sim_controller = controller
+        self.gis_data = gis
+        self.axes.clear()
+
+        # --- Plot GIS Background ---
+        map_extent = None
+        if self.gis_data and self.gis_data.dem_dataset:
+             try:
+                 # Use rasterio.plot.show for basic DEM display with proper extent
+                 # Note: May need adjustment based on CRS
+                 self.dem_plot = rasterio.plot.show(self.gis_data.dem_dataset, ax=self.axes, cmap='terrain', alpha=0.7)
+                 map_extent = self.gis_data.dem_dataset.bounds
+                 self.axes.set_xlim(map_extent.left, map_extent.right)
+                 self.axes.set_ylim(map_extent.bottom, map_extent.top)
+                 print(f"Plotting DEM background. Extent: {map_extent}")
+             except Exception as e:
+                 print(f"Error plotting DEM: {e}")
+                 self.dem_plot = None
+                 self.axes.set_xlim(0, self.sim_controller.config["FIELD_SIZE"])
+                 self.axes.set_ylim(0, self.sim_controller.config["FIELD_SIZE"])
+        else:
+             # Default field size if no map
+             self.axes.set_xlim(0, self.sim_controller.config["FIELD_SIZE"])
+             self.axes.set_ylim(0, self.sim_controller.config["FIELD_SIZE"])
+
+        if self.gis_data and self.gis_data.vector_data is not None:
+             try:
+                 # Plot vector data on top
+                 self.vector_plot = self.gis_data.vector_data.plot(ax=self.axes, facecolor='none', edgecolor='purple', linewidth=1.5, alpha=0.8, zorder=2)
+                 print("Plotting vector data.")
+             except Exception as e:
+                 print(f"Error plotting vector data: {e}")
+                 self.vector_plot = None
+
+        # --- Plot Simulation Entities (Static) ---
+        # Obstacles
+        self.obstacle_patches = []
+        for obs in self.sim_controller.obstacles:
+            patch = patches.Circle(obs.pos, obs.radius, color='black', alpha=0.6, zorder=3)
+            self.axes.add_patch(patch)
+            self.obstacle_patches.append(patch)
+
+        # Turrets and Ranges
+        self.turret_patches = []
+        turret_pos = np.array([t.pos for t in self.sim_controller.turrets]) if self.sim_controller.turrets else np.empty((0,2))
+        self.axes.scatter(turret_pos[:, 0], turret_pos[:, 1], c='darkgreen', marker='^', s=80, label='Turret', zorder=4)
+        for turret in self.sim_controller.turrets:
+            patch = patches.Circle(turret.pos, turret.range, fill=False, color='darkred', linestyle='--', alpha=0.3, zorder=3)
+            self.axes.add_patch(patch)
+            self.turret_patches.append(patch) # Keep ref if needed later
+
+        # --- Dynamic Plot Elements (Placeholders) ---
+        self.scatter_drones = self.axes.scatter([], [], marker='o', s=30, zorder=6)
+        self.scatter_targets = self.axes.scatter([], [], c='red', marker='*', s=150, label='Target', zorder=5)
+
+        self.drone_texts = [self.axes.text(0, 0, '', fontsize=6, color='white', ha='center', va='center', zorder=7)
+                            for _ in self.sim_controller.drones]
+        self.target_texts = [self.axes.text(0, 0, '', fontsize=8, color='black', ha='left', va='bottom', zorder=5)
+                             for _ in self.sim_controller.targets]
+
+        self.trajectory_lines = [self.axes.plot([], [], lw=0.5, alpha=0.5, zorder=2)[0]
+                                 for _ in self.sim_controller.drones]
+
+        self.axes.set_title("Drone Simulation")
+        self.axes.set_xlabel("X Coordinate")
+        self.axes.set_ylabel("Y Coordinate")
+        self.axes.legend(loc='upper right', fontsize='small')
+        self.axes.set_aspect('equal', adjustable='box')
+        self.draw_idle() # Initial draw
+
+    def update_plot(self):
+        if not self.sim_controller or not self.sim_controller.is_running:
+            return
+
+        # Get current state from controller
+        drones = self.sim_controller.drones
+        targets = self.sim_controller.targets
+
+        alive_drones = [d for d in drones if d.alive and d.status != "NoFuel"]
+        alive_targets_list = [t for t in targets if t.alive]
+
+        drone_positions = np.array([d.pos for d in alive_drones]) if alive_drones else np.empty((0, 2))
+        drone_colors = [STATUS_COLORS.get(d.status, DEFAULT_COLOR) for d in alive_drones]
+        target_positions = np.array([t.pos for t in alive_targets_list]) if alive_targets_list else np.empty((0, 2))
+
+        # Update dynamic elements
+        self.scatter_drones.set_offsets(drone_positions)
+        if drone_colors: # set_facecolor fails with empty list
+             self.scatter_drones.set_facecolor(drone_colors)
+
+        self.scatter_targets.set_offsets(target_positions)
+
+        for i, drone in enumerate(drones):
+            if drone.alive and drone.status != "NoFuel":
+                self.drone_texts[i].set_position((drone.pos[0], drone.pos[1] + 1)) # Offset label slightly
+                self.drone_texts[i].set_text(f"D{drone.id}")
+                self.drone_texts[i].set_color(STATUS_COLORS.get(drone.status, DEFAULT_COLOR))
+                self.drone_texts[i].set_visible(True)
+                # Update trajectory
+                if len(drone.trajectory) > 1:
+                    traj_data = np.array(drone.trajectory)
+                    self.trajectory_lines[i].set_data(traj_data[:, 0], traj_data[:, 1])
+                    self.trajectory_lines[i].set_color(STATUS_COLORS.get(drone.status, DEFAULT_COLOR))
+                    self.trajectory_lines[i].set_visible(True)
+                else:
+                    self.trajectory_lines[i].set_visible(False)
+            else:
+                self.drone_texts[i].set_visible(False)
+                self.trajectory_lines[i].set_visible(False)
+
+        for i, target in enumerate(targets):
+            if target.alive:
+                self.target_texts[i].set_position((target.pos[0] + 1, target.pos[1] + 1))
+                self.target_texts[i].set_text(f"T{target.id}[{target.assigned_drones}]")
+                self.target_texts[i].set_visible(True)
+            else:
+                self.target_texts[i].set_visible(False)
+
+        # Request redraw
+        self.draw_idle()
+
+
+# ----------------------------------------------------------------------------
+# Main Application Window (PyQt5)
+# ----------------------------------------------------------------------------
+
+class MainWindow(QMainWindow):
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("Advanced Drone Simulation Framework")
+        self.setGeometry(100, 100, 1400, 900) # Adjust size as needed
+
+        # --- Data Holders ---
+        self.config = DEFAULT_CONFIG.copy()
+        self.gis_data = GISData()
+        self.sim_controller = SimulationController(self.config, self.gis_data)
+
+        # --- Main Layout ---
+        main_widget = QWidget()
+        self.setCentralWidget(main_widget)
+        self.layout_main = QHBoxLayout(main_widget) # Horizontal: Controls | Simulation
+
+        # --- Control Panel (Left Side) ---
+        self.control_panel = QFrame()
+        self.control_panel.setFrameShape(QFrame.StyledPanel)
+        self.control_panel.setFixedWidth(300)
+        self.layout_controls = QVBoxLayout(self.control_panel)
+        self.layout_main.addWidget(self.control_panel)
+
+        # --- Simulation Panel (Right Side) ---
+        self.sim_panel = QFrame()
+        self.sim_panel.setFrameShape(QFrame.StyledPanel)
+        self.layout_sim = QVBoxLayout(self.sim_panel)
+        self.layout_main.addWidget(self.sim_panel, stretch=1) # Allow sim panel to expand
+
+        # --- Populate Control Panel ---
+        self.setup_control_widgets()
+
+        # --- Populate Simulation Panel ---
+        self.canvas = MplCanvas(self, width=10, height=10, dpi=100)
+        self.toolbar = NavigationToolbar(self.canvas, self) # Matplotlib toolbar
+        self.layout_sim.addWidget(self.toolbar)
+        self.layout_sim.addWidget(self.canvas)
+
+        # --- Status Bar ---
+        self.statusBar = QStatusBar()
+        self.setStatusBar(self.statusBar)
+        self.statusBar.showMessage("Ready. Load Map or Setup Simulation.")
+
+        # --- Simulation Timer ---
+        self.timer = QTimer()
+        self.timer.setInterval(self.config["SIMULATION_INTERVAL_MS"])
+        self.timer.timeout.connect(self.simulation_tick)
+
+        # --- Initial State ---
+        self.update_gui_from_config() # Populate fields with defaults
+
+
+    def setup_control_widgets(self):
+        # Title
+        title_label = QLabel("Simulation Parameters")
+        title_label.setAlignment(Qt.AlignCenter)
+        title_label.setStyleSheet("font-size: 14pt; font-weight: bold;")
+        self.layout_controls.addWidget(title_label)
+
+        # Input Fields (Example for a few parameters)
+        self.inputs = {} # Dictionary to store input widgets
+
+        def add_spinbox(label_text, key, min_val, max_val, step, is_double=False):
+            h_layout = QHBoxLayout()
+            label = QLabel(label_text)
+            if is_double:
+                widget = QDoubleSpinBox()
+                widget.setDecimals(1)
+            else:
+                widget = QSpinBox()
+            widget.setRange(min_val, max_val)
+            widget.setSingleStep(step)
+            widget.setValue(self.config.get(key, 0)) # Use .get for safety
+            widget.valueChanged.connect(lambda value, k=key: self.update_config(k, value))
+            h_layout.addWidget(label)
+            h_layout.addWidget(widget)
+            self.layout_controls.addLayout(h_layout)
+            self.inputs[key] = widget # Store reference
+
+        add_spinbox("Num Drones:", "NUM_DRONES", 1, 100, 1)
+        add_spinbox("Num Targets:", "NUM_TARGETS", 1, 50, 1)
+        add_spinbox("Num Turrets:", "NUM_TURRETS", 0, 50, 1)
+        add_spinbox("Num Obstacles:", "NUM_OBSTACLES", 0, 50, 1)
+        add_spinbox("Max Fuel:", "DRONE_MAX_FUEL", 100, 5000, 100, is_double=True)
+        add_spinbox("Turret Range:", "TURRET_RANGE", 5, 50, 1, is_double=True)
+        add_spinbox("Drone Speed:", "DRONE_MAX_SPEED", 0.5, 5.0, 0.1, is_double=True)
+
+        # Buttons
+        self.btn_load_map = QPushButton("Load DEM/Map Data")
+        self.btn_load_map.clicked.connect(self.load_map_data)
+        self.layout_controls.addWidget(self.btn_load_map)
+
+        self.btn_setup = QPushButton("Setup Simulation")
+        self.btn_setup.clicked.connect(self.setup_simulation)
+        self.layout_controls.addWidget(self.btn_setup)
+
+        self.btn_start = QPushButton("Start Simulation")
+        self.btn_start.clicked.connect(self.start_simulation)
+        self.layout_controls.addWidget(self.btn_start)
+
+        self.btn_stop = QPushButton("Stop Simulation")
+        self.btn_stop.clicked.connect(self.stop_simulation)
+        self.layout_controls.addWidget(self.btn_stop)
+
+        self.layout_controls.addStretch() # Push controls to the top
+
+
+    def update_config(self, key, value):
+        """Update the central config dictionary when GUI input changes."""
+        if key in self.config:
+            self.config[key] = value
+            # Update timer interval if changed
+            if key == "SIMULATION_INTERVAL_MS":
+                 self.timer.setInterval(value)
+            # print(f"Config updated: {key} = {value}") # Debug
+        else:
+             print(f"Warning: Attempted to update unknown config key: {key}")
+
+
+    def update_gui_from_config(self):
+        """Set GUI widget values from the config dictionary."""
+        for key, widget in self.inputs.items():
+             if key in self.config:
+                 widget.setValue(self.config[key])
+
+    def load_map_data(self):
+        if not GIS_ENABLED:
+            QMessageBox.warning(self, "GIS Disabled", "GIS libraries (geopandas, rasterio) not found.")
+            return
+
+        # Load DEM
+        dem_path, _ = QFileDialog.getOpenFileName(self, "Load Digital Elevation Model (DEM)", "", "GeoTIFF Files (*.tif *.tiff);;All Files (*)")
+        if dem_path:
+            success, message = self.gis_data.load_dem(dem_path)
+            self.statusBar.showMessage(message)
+            if not success:
+                 QMessageBox.warning(self, "DEM Load Error", message)
+            else:
+                 # Set field size based on map bounds if desired
+                 # self.config["FIELD_SIZE"] = max(self.gis_data.map_bounds.right - self.gis_data.map_bounds.left,
+                 #                                self.gis_data.map_bounds.top - self.gis_data.map_bounds.bottom)
+                 # self.update_gui_from_config()
+                 self.statusBar.showMessage(f"DEM Loaded: {os.path.basename(dem_path)}. Ready to Setup.")
+
+
+        # Optionally load Vector Data
+        vector_path, _ = QFileDialog.getOpenFileName(self, "Load Vector Data (Optional)", "", "Shapefiles (*.shp);;GeoJSON (*.geojson);;All Files (*)")
+        if vector_path:
+             success, message = self.gis_data.load_vector(vector_path)
+             self.statusBar.showMessage(message)
+             if not success:
+                 QMessageBox.warning(self, "Vector Load Error", message)
+
+
+    def setup_simulation(self):
+        self.stop_simulation() # Stop if running
+        print("Setting up simulation with current parameters...")
+        # Ensure simulation controller uses the latest config from GUI
+        self.sim_controller.config = self.config.copy()
+        self.sim_controller.setup_simulation()
+        # Plot initial state on the canvas
+        self.canvas.plot_initial_state(self.sim_controller, self.gis_data)
+        self.statusBar.showMessage(f"Simulation Setup Complete. Ready to Start. Drones: {len(self.sim_controller.drones)}")
+
+    def start_simulation(self):
+        if not self.sim_controller.drones: # Check if setup was done
+            QMessageBox.warning(self, "Setup Required", "Please Setup Simulation before starting.")
+            return
+        if not self.sim_controller.is_running:
+            self.sim_controller.start_simulation()
+            self.timer.start()
+            self.statusBar.showMessage("Simulation Running...")
+
+    def stop_simulation(self):
+        if self.sim_controller.is_running:
+            self.sim_controller.stop_simulation()
+            self.timer.stop()
+            self.statusBar.showMessage(f"Simulation Stopped: {self.sim_controller.status_message}")
+
+
+    def simulation_tick(self):
+        """Called by the QTimer to advance and draw the simulation."""
+        if self.sim_controller.is_running:
+            self.sim_controller.run_step()
+            self.canvas.update_plot() # Update matplotlib canvas
+            # Update status bar only if simulation hasn't ended itself
+            if self.sim_controller.is_running:
+                 self.statusBar.showMessage(self.sim_controller.status_message)
+        else:
+             # Ensure timer stops if simulation ended internally
+             self.timer.stop()
+             self.statusBar.showMessage(f"Simulation Ended: {self.sim_controller.status_message}")
+
+
+# ----------------------------------------------------------------------------
+# Entry Point
+# ----------------------------------------------------------------------------
+
+if __name__ == '__main__':
+    app = QApplication(sys.argv)
+    main_window = MainWindow()
+    main_window.show()
+    sys.exit(app.exec_())
