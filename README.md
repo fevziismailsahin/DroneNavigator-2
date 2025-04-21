@@ -8,7 +8,8 @@ A sophisticated simulation of military drone swarms with GIS integration, flocki
 - **Military Tactical Elements**: Targets, defensive turrets, and obstacles in a simulated battlespace
 - **GIS Integration**: Support for terrain data affecting movement and line-of-sight
 - **Learning Mechanisms**: Drones "learn" to avoid threats based on experiences
-- **Interactive GUI**: Real-time visualization and parameter adjustment
+- **Interactive GUI**: Real-time visualization and parameter adjustment (when run on desktop)
+- **Headless Operation**: Command-line simulation with plot generation for non-GUI environments
 - **Physics Simulation**: Simple but effective physical model for drone movement
 
 ## System Requirements
@@ -16,32 +17,36 @@ A sophisticated simulation of military drone swarms with GIS integration, flocki
 This application requires:
 
 - Python 3.x
-- PyQt5 for the GUI components
-- Matplotlib for visualization
 - NumPy for mathematical operations
+- Matplotlib for visualization
+- PyQt5 for the GUI components (optional, only for desktop mode)
 - GIS libraries: geopandas, rasterio, shapely (optional, for terrain features)
 
 ## Running the Simulation
 
-The application is designed to run with a graphical user interface:
+The application automatically detects your environment and runs in the appropriate mode:
 
 ```bash
 python main.py
 ```
 
-### Important Note
+In a desktop environment with GUI support, it will launch the full interactive application.
+In a headless environment (like Replit), it will run the command-line version.
 
-This simulation requires a desktop environment with GUI support, as it uses PyQt5 for its interface. 
-When running in a headless environment (like Replit's server), it will operate in command-line mode with limited functionality.
+### Headless Mode Options
 
-## Using the Application
+For more control over the headless simulation, run it directly:
 
-The GUI provides several panels:
+```bash
+python headless_simulation.py --steps 300 --interval 20 --drones 20 --targets 8
+```
 
-1. **Simulation Control**: Start, pause, and reset the simulation
-2. **Configuration**: Adjust drone parameters, flocking weights, and more
-3. **GIS Integration**: Load terrain data for enhanced realism
-4. **Visualization**: Interactive map showing drone movements and status
+Command line options:
+- `--steps`: Number of simulation steps
+- `--interval`: How often to save plot images
+- `--drones`: Number of drones to simulate
+- `--targets`: Number of targets
+- `--no-plots`: Disable plot generation for faster simulation
 
 ## Implementation Details
 
@@ -55,13 +60,21 @@ The simulation is structured around several core components:
 
 ## Source Code Structure
 
-- `main.py`: Application entry point
-- `gui.py`: PyQt5 GUI components
+- `main.py`: Application entry point with environment detection
+- `headless_simulation.py`: Command-line simulation for headless environments
+- `gui.py`: PyQt5 GUI components for desktop mode
 - `simulation_core.py`: Core simulation logic and entities
 - `mpl_canvas.py`: Matplotlib visualization canvas
 - `gis_utils.py`: GIS data handling utilities
 - `config.py`: Simulation parameters and constants
 
+## Output
+
+In headless mode, the simulation generates:
+- Console output with simulation statistics and progress
+- Plot images saved to the `output` directory showing drone positions and status
+- Optional animation generation (requires moviepy package)
+
 ## Desktop Usage
 
-For proper visualization and interaction, this simulation should be run on a desktop environment with full GUI support. The application uses PyQt5 which requires a graphical interface.
+For the full interactive experience with real-time parameter adjustment and visualization, run the simulation on a desktop environment with GUI support. The desktop version uses PyQt5 for its graphical interface.
