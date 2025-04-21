@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "Add your description here"
 requires-python = ">=3.11"
 dependencies = [
+    "flask>=3.1.0",
     "geopandas>=1.0.1",
     "matplotlib>=3.10.1",
     "numpy>=2.2.5",
